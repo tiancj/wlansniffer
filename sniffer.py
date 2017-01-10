@@ -3,9 +3,10 @@
 import sys
 import getopt
 import socket
-import struct
-import fcntl
+# import struct
+# import fcntl
 import eloop
+import dpkt
 
 ETH_P_ALL = 0x0003
 SIOCGIFINDEX = 0x8933
@@ -37,15 +38,28 @@ class SnifferWorker(object):
 
     def create_raw_socket(self):
         self.sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
-        # step1: get the index of the interface
-        ret = fcntl.ioctl(self.sock, SIOCGIFINDEX, struct.pack('=6sI', bytes(self.ifname, 'ascii'), 0))
-        tmp, ifindex = struct.unpack('=6sI', ret)
-        print("ifname %s: ifindex %d" % (self.ifname, ifindex))
-
+        self.sock.setblocking(False)
+        # get the index of the interface
+        # ret = fcntl.ioctl(self.sock, SIOCGIFINDEX, struct.pack('=6sI', bytes(self.ifname, 'ascii'), 0))
+        # tmp, ifindex = struct.unpack('=6sI', ret)
+        # print("ifname %s: ifindex %d" % (self.ifname, ifindex))
         self.sock.bind((self.ifname, ETH_P_ALL))
 
     def on_raw_packet_received(self, fd, mask):
         print('packet on <%s> received' % self.ifname)
+        # receive complete one pkt
+        buf = fd.recv(4096, socket.MSG_TRUNC)
+        if buf:
+            print(dpkt.hexdump(buf))
+            radiotap_hdr = dpkt.radiotap.Radiotap(buf)
+            if radiotap_hdr.channel_present and radiotap_hdr.channel.freq:
+                print("Channel: %d" % radiotap_hdr.channel.freq)
+            if radiotap_hdr.rate_present and radiotap_hdr.rate.val:
+                print("Rate: %d" % radiotap_hdr.rate.val)
+
+            ieee80211_pkt = radiotap_hdr.data
+            if ieee80211_pkt:
+                print(ieee80211_pkt.subtype)
 
     def init(self):
         self.create_raw_socket()
