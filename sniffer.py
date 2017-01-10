@@ -28,7 +28,7 @@ class Sniffer(object):
 class SnifferWorker(object):
     def __init__(self, sniffer, ifname = None):
         self.ifname = ifname
-        self.fd = -1
+        self.sock = None
         sniffer.add_worker(self)
         self.eloop = sniffer.eloop
 
@@ -36,24 +36,24 @@ class SnifferWorker(object):
         return 'SnifferWorker: <ifname %s>' % self.ifname
 
     def create_raw_socket(self):
-        self.fd = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
+        self.sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
         # step1: get the index of the interface
-        ret = fcntl.ioctl(self.fd, SIOCGIFINDEX, struct.pack('=6sI', bytes(self.ifname, 'ascii'), 0))
+        ret = fcntl.ioctl(self.sock, SIOCGIFINDEX, struct.pack('=6sI', bytes(self.ifname, 'ascii'), 0))
         tmp, ifindex = struct.unpack('=6sI', ret)
         print("ifname %s: ifindex %d" % (self.ifname, ifindex))
 
-        self.fd.bind((self.ifname, ETH_P_ALL))
+        self.sock.bind((self.ifname, ETH_P_ALL))
 
     def on_raw_packet_received(self, fd, mask):
-        print('packet on <%s> received\n' % self.ifname)
+        print('packet on <%s> received' % self.ifname)
 
     def init(self):
         self.create_raw_socket()
-        self.eloop.register(self.fd, eloop.EVENT_READ, self.on_raw_packet_received)
+        self.eloop.register(self.sock, eloop.EVENT_READ, self.on_raw_packet_received)
 
 
 def usage(program):
-    print("Usage: %s [-i <ifname>]\n", program)
+    print("Usage: %s [-i <ifname>]", program)
 
 
 def main():
