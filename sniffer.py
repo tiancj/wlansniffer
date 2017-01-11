@@ -28,6 +28,12 @@ class Sniffer(object):
         self.ap_database = {}
         self.eloop = eloop.EventLoop()
 
+    def insert_sta_to_database(self):
+        pass
+
+    def insert_ap_to_database(self):
+        pass
+
     def add_worker(self, worker):
         self.workers.append(worker)
 
@@ -42,6 +48,7 @@ class SnifferWorker(object):
     def __init__(self, sniffer, ifname = None):
         self.ifname = ifname
         self.sock = None
+        self.sniffer = sniffer
         sniffer.add_worker(self)
         self.eloop = sniffer.eloop
 
@@ -89,7 +96,14 @@ class SnifferWorker(object):
         return None
 
     def _ieee80211_rx_mgmt_beacon(self, data):
-        pass
+        ssid = None
+        if hasattr(data, "ssid"):
+            ssid = data.ssid.data
+        if hasattr(data, "ds"):
+            channel = data.ds.ch
+        bssid = data.mgnt.bssid
+        print("BEACON: bssid: %s, ssid: %s" % (self._to_mac_string(bssid), ssid))
+        self.sniffer.insert_ap_to_database()
 
     def _handle_mgmt(self, data, **kwarg):
         stype = data.subtype
@@ -120,7 +134,7 @@ class SnifferWorker(object):
                 sta_addr = data.mgmt.src
         if not self.is_broadcast_ether_addr(bssid):
             print("MGMT: bssid: %s, sta_addr: %s" % (self._to_mac_string(bssid), self._to_mac_string(sta_addr)))
-
+            self.sniffer.insert_sta_to_database()
 
     @staticmethod
     def _to_mac_string(mac):
