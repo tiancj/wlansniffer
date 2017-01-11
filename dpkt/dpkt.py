@@ -7,6 +7,7 @@ import itertools
 import socket
 import struct
 import array
+import sys
 
 
 class Error(Exception):
@@ -212,3 +213,27 @@ def in_cksum_done(s):
 def in_cksum(buf):
     """Return computed Internet checksum."""
     return in_cksum_done(in_cksum_add(0, buf))
+
+def cpu_to_le32(v):
+    return struct.unpack('<I', struct.pack('=I', v))[0]
+
+def cpu_to_be32(v):
+    return struct.unpack('>I', struct.pack('=I', v))[0]
+
+def le32_to_cpu(v):
+    if sys.byteorder == 'little':
+        return v
+    else:
+        return struct.unpack('>I', struct.pack('=I', v))
+
+def be32_to_cpu(v):
+    if sys.byteorder != 'little':
+        return v
+    else:
+        return struct.unpack('>I', struct.pack('=I', v))
+
+if __name__ == '__main__':
+    print("%x" % cpu_to_le32(0x12345678))
+    print("%x" % cpu_to_be32(0x12345678))
+    print("%x" % le32_to_cpu(0x12345678))
+    print("%x" % be32_to_cpu(0x12345678))
