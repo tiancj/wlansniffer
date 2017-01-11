@@ -76,17 +76,22 @@ class EventLoop(object):
         while True:
             timeout = None
             timeout_handle = None
+
             if len(self._timeouts):
-                timeout_handle = heapq.heappop(self._timeouts)
+                timeout_handle = self._timeouts[0]
                 timeout = max(0, timeout_handle.when - self._time())
+
             event_list = self._sel.select(timeout)
+
+            if timeout_handle:
+                if self._time() >= timeout_handle.when:
+                    heapq.heappop(self._timeouts)
+                    callback = timeout_handle.callback
+                    callback(timeout_handle.arg)
+
             for key, mask in event_list:
                 callback = key.data
                 callback(key.fileobj, mask)
-            if timeout_handle:
-                if self._time() >= timeout_handle.when:
-                    callback = timeout_handle.callback
-                    callback(timeout_handle.arg)
 
 
 if __name__ == '__main__':
