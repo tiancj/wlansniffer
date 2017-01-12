@@ -7,32 +7,112 @@ import socket
 # import fcntl
 import eloop
 import dpkt
+import struct
+import time
 
 ETH_P_ALL = 0x0003
 SIOCGIFINDEX = 0x8933
 
 
-class StationCache(object):
-    def __init__(self):
-        self.mac = None
-        self.time = None
+class StationDatabase(object):
 
-    def __hash__(self):
-        pass
+    STATION_HASH_ID_NUM = 10240
+
+    def __init__(self):
+        self.sta_macs = {}
+
+    def hash(self, mac):
+        val1, val2, val3 = struct.unpack('HHH', mac)
+        return (val1 ^ val2 ^ val3) & (self.STATION_HASH_ID_NUM - 1)
+
+    def insert_sta_to_database(self, sta):
+        hash = self.hash(sta.mac)
+        if hash not in self.sta_macs:
+            self.sta_macs[hash] = []
+            self.sta_macs[hash].append(sta)
+        else:
+            found = False
+            for e in self.sta_macs[hash]:
+                if e == sta: # update members
+                    found = True
+                    e.time = sta.time
+            if not found:
+                self.sta_macs[hash].append(sta)
+
+    def __str__(self):
+        ret = ''
+        for hash, stations in self.sta_macs.items():
+            ret.join('hash: %x, stations: %s' % (hash, stations))
+        return ret
+
+class APDatabase(object):
+
+    AP_HASH_ID_NUM = 10240
+
+    def __init__(self):
+        self.ap_macs = {}
+
+    def hash(self, mac):
+        val1, val2, val3 = struct.unpack('HHH', mac)
+        return (val1 ^ val2 ^ val3) & (self.AP_HASH_ID_NUM - 1)
+
+    def insert_sta_to_database(self, ap):
+        hash = self.hash(ap.mac)
+        if hash not in self.ap_macs:
+            self.ap_macs[hash] = []
+            self.ap_macs[hash].append(ap)
+        else:
+            found = False
+            for e in self.ap_macs[hash]:
+                if e == ap: # update members
+                    found = True
+                    e.time = ap.time
+            if not found:
+                self.ap_macs[hash].append(ap)
+
+    def __str__(self):
+        ret = ''
+        print("self.ap_macs", self.ap_macs)
+        for h, stations in self.ap_macs.items():
+            ret.join('hash: %x, stations: %s' % (h, stations))
+        return ret
+
+    __repr__ = __str__
+
+class StationCache(object):
+
+    def __init__(self, mac, time, **kwargs):
+        self.mac = mac
+        self.time = time
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __eq__(self, other):
+        if self.mac == other.mac:
+            return True
+        return False
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __str__(self):
+        return '<sta %s>' % SnifferWorker._to_mac_string(self.mac)
+
+    __repr__ = __str__
 
 
 class Sniffer(object):
     def __init__(self):
         self.workers = []
-        self.sta_database = {}
-        self.ap_database = {}
+        self.sta_database = StationDatabase()
+        self.ap_database = APDatabase()
         self.eloop = eloop.EventLoop()
 
-    def insert_sta_to_database(self):
-        pass
+    def insert_sta_to_database(self, sta):
+        self.sta_database.insert_sta_to_database(sta)
 
-    def insert_ap_to_database(self):
-        pass
+    def insert_ap_to_database(self, ap):
+        self.ap_database.insert_sta_to_database(ap)
 
     def add_worker(self, worker):
         self.workers.append(worker)
@@ -101,9 +181,10 @@ class SnifferWorker(object):
             ssid = data.ssid.data
         if hasattr(data, "ds"):
             channel = data.ds.ch
-        bssid = data.mgnt.bssid
-        print("BEACON: bssid: %s, ssid: %s" % (self._to_mac_string(bssid), ssid))
-        self.sniffer.insert_ap_to_database()
+        bssid = data.mgmt.bssid
+        print("BEACON: bssid: %s, channel: %d, ssid: %s" % (self._to_mac_string(bssid), channel, ssid.decode('utf8')))
+        self.sniffer.insert_ap_to_database(StationCache(bssid, time.monotonic(), ssid=ssid.decode('utf8')))
+        print(self.sniffer.ap_database)
 
     def _handle_mgmt(self, data, **kwarg):
         stype = data.subtype
@@ -134,7 +215,7 @@ class SnifferWorker(object):
                 sta_addr = data.mgmt.src
         if not self.is_broadcast_ether_addr(bssid):
             print("MGMT: bssid: %s, sta_addr: %s" % (self._to_mac_string(bssid), self._to_mac_string(sta_addr)))
-            self.sniffer.insert_sta_to_database()
+            self.sniffer.insert_sta_to_database(StationCache(sta_addr, time.monotonic()))
 
     @staticmethod
     def _to_mac_string(mac):
