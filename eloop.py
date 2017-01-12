@@ -59,8 +59,8 @@ class EventLoop(object):
     def _time(self):
         return time.monotonic()
 
-    def register(self, fileobj, events, data=None):
-        self._sel.register(fileobj, events, data)
+    def register(self, fileobj, events, callback, data=None):
+        self._sel.register(fileobj, events, (callback, data))
 
     def register_timeout(self, delay, callback, arg=None):
         timeout_event = EloopTimeout(delay + self._time(), callback, arg)
@@ -90,8 +90,8 @@ class EventLoop(object):
                     callback(timeout_handle.arg)
 
             for key, mask in event_list:
-                callback = key.data
-                callback(key.fileobj, mask)
+                callback = key.data[0]
+                callback(key.fileobj, mask, key.data[1])
 
 
 if __name__ == '__main__':
