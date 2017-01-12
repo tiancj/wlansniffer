@@ -62,6 +62,9 @@ class EventLoop(object):
     def register(self, fileobj, events, callback, data=None):
         self._sel.register(fileobj, events, (callback, data))
 
+    def modify(self, fileobj, events, callback, data=None):
+        self._sel.modify(fileobj, events, (callback, data))
+
     def register_timeout(self, delay, callback, arg=None):
         timeout_event = EloopTimeout(delay + self._time(), callback, arg)
         heapq.heappush(self._timeouts, timeout_event)

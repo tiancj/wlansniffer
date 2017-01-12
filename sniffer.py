@@ -10,6 +10,7 @@ import dpkt
 import struct
 import time
 import os
+import transport
 
 ETH_P_ALL = 0x0003
 SIOCGIFINDEX = 0x8933
@@ -114,6 +115,16 @@ class Sniffer(object):
         self.eloop = eloop.EventLoop()
         self.ctrl_path = ctrl_path
         self.ctrl_sock = None
+        self.transport = transport.DefaultTransport(self.eloop)
+        self._disable_transport = False
+
+    @property
+    def disable_transport(self):
+        return self._disable_transport
+
+    @disable_transport.setter
+    def disable_transport(self, enable):
+        self._disable_transport = enable
 
     def insert_sta_to_database(self, sta):
         self.sta_database.insert_sta_to_database(sta)
@@ -143,6 +154,8 @@ class Sniffer(object):
         for w in self.workers:
             w.init()
         self._init_ctrl_iface()
+        if not self._disable_transport:
+            self.transport.run()
         self.eloop.run()
 
 
@@ -308,6 +321,8 @@ def main():
             worker.ifname = a
         elif o == '-N':
             worker = SnifferWorker(sniffer)
+        elif o == '-t':
+            sniffer.disable_transport = True
 
     for w in sniffer.workers:
         print(w)
