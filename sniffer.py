@@ -9,6 +9,7 @@ import eloop
 import dpkt
 import struct
 import time
+import os
 
 ETH_P_ALL = 0x0003
 SIOCGIFINDEX = 0x8933
@@ -45,6 +46,7 @@ class StationDatabase(object):
             ret.join('hash: %x, stations: %s' % (hash, stations))
         return ret
 
+
 class APDatabase(object):
 
     AP_HASH_ID_NUM = 10240
@@ -79,6 +81,7 @@ class APDatabase(object):
 
     __repr__ = __str__
 
+
 class StationCache(object):
 
     def __init__(self, mac, time, **kwargs):
@@ -96,17 +99,21 @@ class StationCache(object):
         return not self.__eq__(other)
 
     def __str__(self):
+        if getattr(self, 'ssid'):
+            return '<ap %s %s>' % (SnifferWorker._to_mac_string(self.mac), self.ssid)
         return '<sta %s>' % SnifferWorker._to_mac_string(self.mac)
 
     __repr__ = __str__
 
 
 class Sniffer(object):
-    def __init__(self):
+    def __init__(self, ctrl_path='/tmp/sniffer.sock'):
         self.workers = []
         self.sta_database = StationDatabase()
         self.ap_database = APDatabase()
         self.eloop = eloop.EventLoop()
+        self.ctrl_path = ctrl_path
+        self.ctrl_sock = None
 
     def insert_sta_to_database(self, sta):
         self.sta_database.insert_sta_to_database(sta)
@@ -117,9 +124,25 @@ class Sniffer(object):
     def add_worker(self, worker):
         self.workers.append(worker)
 
+    def on_ctrl_iface_data(self, fd, mask, arg):
+        if mask != eloop.EVENT_READ:
+            return
+
+        msg = fd.recv(2048)
+        print(msg)
+
+    def _init_ctrl_iface(self):
+        if os.path.exists(self.ctrl_path):
+            os.unlink(self.ctrl_path)
+        self.ctrl_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        self.ctrl_sock.setblocking(False)
+        self.ctrl_sock.bind(self.ctrl_path)
+        self.eloop.register(self.ctrl_sock, eloop.EVENT_READ, self.on_ctrl_iface_data)
+
     def start(self):
         for w in self.workers:
             w.init()
+        self._init_ctrl_iface()
         self.eloop.run()
 
 
@@ -131,6 +154,7 @@ class SnifferWorker(object):
         self.sniffer = sniffer
         sniffer.add_worker(self)
         self.eloop = sniffer.eloop
+        self.current_channel = 1
 
     def __str__(self):
         return 'SnifferWorker: <ifname %s>' % self.ifname
@@ -144,7 +168,7 @@ class SnifferWorker(object):
         # print("ifname %s: ifindex %d" % (self.ifname, ifindex))
         self.sock.bind((self.ifname, ETH_P_ALL))
 
-    def on_raw_packet_received(self, fd, mask):
+    def on_raw_packet_received(self, fd, mask, arg):
         if mask != eloop.EVENT_READ:
             return
 
@@ -182,9 +206,9 @@ class SnifferWorker(object):
         if hasattr(data, "ds"):
             channel = data.ds.ch
         bssid = data.mgmt.bssid
-        print("BEACON: bssid: %s, channel: %d, ssid: %s" % (self._to_mac_string(bssid), channel, ssid.decode('utf8')))
+        # print("BEACON: bssid: %s, channel: %d, ssid: %s" % (self._to_mac_string(bssid), channel, ssid.decode('utf8')))
         self.sniffer.insert_ap_to_database(StationCache(bssid, time.monotonic(), ssid=ssid.decode('utf8')))
-        print(self.sniffer.ap_database)
+        # print(self.sniffer.ap_database)
 
     def _handle_mgmt(self, data, **kwarg):
         stype = data.subtype
@@ -214,7 +238,7 @@ class SnifferWorker(object):
             if sta_addr == data.mgmt.src:
                 sta_addr = data.mgmt.src
         if not self.is_broadcast_ether_addr(bssid):
-            print("MGMT: bssid: %s, sta_addr: %s" % (self._to_mac_string(bssid), self._to_mac_string(sta_addr)))
+            # print("MGMT: bssid: %s, sta_addr: %s" % (self._to_mac_string(bssid), self._to_mac_string(sta_addr)))
             self.sniffer.insert_sta_to_database(StationCache(sta_addr, time.monotonic()))
 
     @staticmethod
@@ -250,12 +274,22 @@ class SnifferWorker(object):
                 sta_addr = data.data_frame.dst
             if sta_addr is None:
                 return
-            print("DATA: bssid: %s, sta_addr: %s" % (self._to_mac_string(bssid), self._to_mac_string(sta_addr)))
+            # print("DATA: bssid: %s, sta_addr: %s" % (self._to_mac_string(bssid), self._to_mac_string(sta_addr)))
 
+    def channel_switch(self, arg):
+        self.current_channel += 1
+        if self.current_channel > 14:
+            self.current_channel = 1
+        # print('switching channel to %d' % self.current_channel)
+        os.system('iwconfig %s channel %d' % (self.ifname, self.current_channel))
+        self.eloop.register_timeout(0.5, self.channel_switch)
 
     def init(self):
         self.create_raw_socket()
+        self.eloop.register_timeout(0.5, self.channel_switch)
         self.eloop.register(self.sock, eloop.EVENT_READ, self.on_raw_packet_received)
+
+        os.system('iwconfig %s channel %d' % (self.ifname, self.current_channel))
 
 
 def usage(program):
