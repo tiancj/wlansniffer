@@ -87,6 +87,7 @@ IE_CF = 4
 IE_TIM = 5
 IE_IBSS = 6
 IE_HT_CAPA = 45
+IE_RSN = 48
 IE_ESR = 50
 IE_HT_INFO = 61
 
@@ -609,11 +610,14 @@ class IEEE80211(dpkt.Packet):
                             },
             }
 
-            decoder = action_parser[self.category][self.code][1]
-            field_name = action_parser[self.category][self.code][0]
-            field = decoder(self.data)
-            setattr(self, field_name, field)
-            self.data = field.data
+            try:
+                decoder = action_parser[self.category][self.code][1]
+                field_name = action_parser[self.category][self.code][0]
+                field = decoder(self.data)
+                setattr(self, field_name, field)
+                self.data = field.data
+            except KeyError as e:
+                print('ActionFrame: cannot decoder category %d code %d' % (self.category, self.code))
 
     class BlockAckActionRequest(dpkt.Packet):
         __hdr__ = (
